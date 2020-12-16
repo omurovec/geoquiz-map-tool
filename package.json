@@ -1,0 +1,28 @@
+{
+  "name": "geoquiz-admin-ts",
+  "version": "1.0.0",
+  "description": "Admin service for GeoQuiz",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "tsc && node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^4.7.0",
+    "@typescript-eslint/parser": "^4.7.0",
+    "eslint": "^7.13.0",
+    "eslint-config-standard": "^16.0.1",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.2.1",
+    "typescript": "^4.0.5"
+  },
+  "dependencies": {
+    "@googlemaps/js-api-loader": "^1.11.1",
+    "@types/googlemaps": "^3.40.3",
+    "@types/node": "^14.14.13",
+    "poly2tri": "^1.5.0"
+  }
+}
