@@ -58,51 +58,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-var js_api_loader_1 = require("@googlemaps/js-api-loader");
 var util_1 = require("util");
 var prompt_sync_1 = __importDefault(require("prompt-sync"));
 var https = __importStar(require("https"));
 var querystring = __importStar(require("querystring"));
-var poly2tri = __importStar(require("poly2tri"));
 var environment_1 = __importDefault(require("./environment"));
-var jsdom = __importStar(require("jsdom"));
-var firebase_1 = __importDefault(require("./firebase"));
+var Firebase_1 = __importDefault(require("./Firebase"));
+var StreetViewVerifier_1 = require("./StreetViewVerifier");
+var Triangulate_1 = require("./Triangulate");
 var POLYGON_THRESHOLD = 0.01;
-var POINT_DENSITY = 1000000;
-var Triangle = /** @class */ (function () {
-    function Triangle(v) {
-        this.vertices = v;
-        this.area = this.calcArea(this.vertices[0][0], this.vertices[0][1], this.vertices[1][0], this.vertices[1][1], this.vertices[2][0], this.vertices[2][1]);
-    }
-    Triangle.prototype.calcArea = function (x1, y1, x2, y2, x3, y3) {
-        return Math.abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)) / 2);
-    };
-    Triangle.prototype.pointInside = function (point) {
-        var A = [];
-        for (var i = 0; i < 3; i++) {
-            A[i + 1] = this.calcArea(this.vertices[i][0], this.vertices[i][1], this.vertices[(i + 1) % 3][0], this.vertices[(i + 1) % 3][1], point[0], point[1]);
-        }
-        // Equal within 0.0000001?
-        return Math.abs(this.area - (A[1] + A[2] + A[3])) < 0.0000001;
-    };
-    Triangle.prototype.getRandomPoints = function () {
-        var numPoints = this.area * POINT_DENSITY;
-        var points = [];
-        var verts = this.vertices;
-        while (points.length <= numPoints) {
-            var v1 = [verts[1][0] - verts[0][0], verts[1][1] - verts[0][1]];
-            var v2 = [verts[2][0] - verts[0][0], verts[2][1] - verts[0][1]];
-            var a = Math.random();
-            var b = Math.random();
-            var p = [verts[0][0] + v1[0] * a + v2[0] * b, verts[0][1] + v1[1] * a + v2[1] * b];
-            if (this.pointInside(p)) {
-                points.push(p);
-            }
-        }
-        return points;
-    };
-    return Triangle;
-}());
 function getStartingData() {
     var data;
     try {
@@ -154,68 +118,6 @@ var getOpenStreetMapData = function (map) {
         req.end();
     });
 };
-function triangulate(coordinates) {
-    var triangles = [];
-    var polygon = [];
-    // Set initial polygon for(let a = 0; a < coordinates[0].length; a++) {
-    for (var a = 1; a < coordinates[0].length; a++) {
-        var x = coordinates[0][a][0];
-        var y = coordinates[0][a][1];
-        polygon.push(new poly2tri.Point(x, y));
-    }
-    var swctx = new poly2tri.SweepContext(polygon);
-    // Set following polygons as holes
-    for (var a = 1; a < coordinates.length; a++) {
-        // Adjust holes using amount from original adjustment
-        var hole = [];
-        for (var b = 1; b < coordinates[a].length; b++) {
-            var x = coordinates[a][b][0];
-            var y = coordinates[a][b][1];
-            hole.push(new poly2tri.Point(x, y));
-        }
-        swctx.addHole(hole);
-    }
-    swctx.triangulate();
-    swctx.getTriangles().forEach(function (tri, ind) {
-        var points = [];
-        // Convert from poly2tri.Point type to number[][]
-        // and push to points array
-        tri.getPoints().forEach(function (p) { points.push([p.x, p.y]); });
-        // Correct adjusted points and add them to the triangles array
-        triangles[ind] = points;
-    });
-    return triangles;
-}
-// Must return type any since the google types are loaded
-// within the function itself
-function initStreetViewService() {
-    return __awaiter(this, void 0, void 0, function () {
-        var window, loader;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    window = new jsdom.JSDOM("", { runScripts: "dangerously", resources: "usable" }).window;
-                    // @ts-ignore: Type does not matter
-                    global.window = window;
-                    global.document = window.document;
-                    loader = new js_api_loader_1.Loader({
-                        apiKey: environment_1.default.google_api_key,
-                        version: 'weekly',
-                        libraries: ['places']
-                    });
-                    return [4 /*yield*/, loader.load().then(function () {
-                            console.log("google loaded");
-                        }).catch(function (err) {
-                            console.log(err);
-                        })];
-                case 1:
-                    _a.sent();
-                    global.google = global.window.google;
-                    return [2 /*return*/, new google.maps.StreetViewService()];
-            }
-        });
-    });
-}
 function main() {
     return __awaiter(this, void 0, void 0, function () {
         var startingData, streetViewService, maps, i, processedMap, prompt, i, publishPrompt;
@@ -226,7 +128,7 @@ function main() {
                     startingData = getStartingData();
                     if (!startingData)
                         return [2 /*return*/, null];
-                    return [4 /*yield*/, initStreetViewService()];
+                    return [4 /*yield*/, StreetViewVerifier_1.initStreetViewService()];
                 case 1:
                     streetViewService = _a.sent();
                     maps = [];
@@ -242,16 +144,16 @@ function main() {
                             if (openData.geojson.type === 'MultiPolygon') {
                                 var coordinates = openData.geojson.coordinates;
                                 coordinates.forEach(function (poly) {
-                                    triangles.push.apply(triangles, triangulate(poly));
+                                    triangles.push.apply(triangles, Triangulate_1.triangulate(poly));
                                 });
                             }
                             else if (openData.geojson.type === 'Polygon') {
                                 var coordinates = openData.geojson.coordinates;
-                                triangles = triangulate(coordinates);
+                                triangles = Triangulate_1.triangulate(coordinates);
                             }
                             // Generate random points in a triangle
                             triangles.forEach(function (tri) {
-                                var tester = new Triangle(tri);
+                                var tester = new Triangulate_1.Triangle(tri);
                                 var points = tester.getRandomPoints();
                                 // Filter to only streetview usable maps
                                 points.forEach(function (point) { return __awaiter(_this, void 0, void 0, function () {
@@ -326,7 +228,7 @@ function main() {
                     console.log("Round Timer " + maps[i].roundTimer);
                     publishPrompt = prompt("confirm an publish? (Y/n): ");
                     if (!(publishPrompt === "Y")) return [3 /*break*/, 8];
-                    return [4 /*yield*/, firebase_1.default(maps[i])];
+                    return [4 /*yield*/, Firebase_1.default(maps[i])];
                 case 7:
                     _a.sent();
                     console.log("Uploaded");
