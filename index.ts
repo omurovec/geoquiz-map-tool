@@ -1,14 +1,18 @@
 import { Loader } from '@googlemaps/js-api-loader';
+import { promisify } from 'util';
+import Prompt from 'prompt-sync';
 import * as https from 'https';
 import * as querystring from 'querystring';
 import * as poly2tri from 'poly2tri';
 import ENV from './environment';
+import * as jsdom from 'jsdom';
+import uploadMap from './firebase';
 
 const POLYGON_THRESHOLD: number = 0.01;
 const POINT_DENSITY = 1000000;
 
 interface MapInfo {
-    thumbnail?: string;
+    thumbnail: string;
     city?: string;
     state?: string;
     country: string;
@@ -16,12 +20,12 @@ interface MapInfo {
     roundTimer: number;
 }
 
-interface DesMap {
+interface Map {
     boundary: {
         location: [number, number];
         radius: number;
     };
-    locations: number[][2];
+    locations: number[][];
     numRounds: number;
     plainTitle: string;
     roundTimer: number;
@@ -30,9 +34,10 @@ interface DesMap {
 }
 
 interface OpenMap {
-    boundingbox: number[],
+    boundingbox: string[],
     lat: number;
     lon: number;
+    display_name: string,
     geojson: {
         type: string;
         coordinates: any;
@@ -98,7 +103,7 @@ function getStartingData (): MapInfo[] | null {
     data = require('./test_data.json');
     return data;
   } catch (err) {
-    console.error('Invalid starting data')
+    console.error(err);
   }
     return null;
 }
@@ -157,7 +162,6 @@ function triangulate(coordinates: number[][][]): number[][][] {
     for(let a = 1; a < coordinates[0].length; a++) {
         let x = coordinates[0][a][0];
         let y = coordinates[0][a][1];
-        console.log(`New Point: {x: ${x}, y: ${y}}`);
         polygon.push(new poly2tri.Point(x, y));
     }
 
@@ -170,7 +174,6 @@ function triangulate(coordinates: number[][][]): number[][][] {
         for(let b = 1; b < coordinates[a].length; b++) {
             let x = coordinates[a][b][0];
             let y = coordinates[a][b][1];
-            console.log(`New Point: {x: ${x}, y: ${y}}`);
             hole.push(new poly2tri.Point(x, y));
         }
 
@@ -192,71 +195,137 @@ function triangulate(coordinates: number[][][]): number[][][] {
     return triangles;
 }
 
+// Must return type any since the google types are loaded
+// within the function itself
+async function initStreetViewService(): Promise<any> {
+     
+    // Init fake dom for google maps API
+    const { window } = new jsdom.JSDOM(``, {runScripts: "dangerously", resources: "usable"});
+     
+    // @ts-ignore: Type does not matter
+    global.window = window;
+    global.document = window.document
+
+    // Load google maps API
+    const loader = new Loader({
+        apiKey: ENV.google_api_key,
+        version: 'weekly',
+        libraries: ['places']
+    });
+
+    await loader.load().then(() => {
+        console.log("google loaded");
+    }).catch(err => {
+        console.log(err);
+    });
+
+    global.google = global.window.google;
+
+    return new google.maps.StreetViewService();
+}
+
 async function main() {
-    const maps: MapInfo[] | null = getStartingData();
-    if(!maps) return null;
+    const startingData: MapInfo[] | null = getStartingData();
+    if(!startingData) return null;
 
-    for(let i = 0; i < maps.length; i++) {
+    const streetViewService: google.maps.StreetViewService = await initStreetViewService();
 
-        getOpenStreetMapData(maps[i]).then((openData: OpenMap) => {
+    const maps: Map[] = [];
+
+    for(let i = 0; i < startingData.length; i++) {
+
+        const processedMap = await getOpenStreetMapData(startingData[i])
+            .then((openData: OpenMap): {openData: OpenMap, rand_points: number[][]} => {
             let rand_points: number[][] = [];
             let triangles: number[][][] = [];
 
+            // Triangulate the region
             if(openData.geojson.type === 'MultiPolygon') {
-
                 let coordinates: number[][][][] = openData.geojson.coordinates;
                 coordinates.forEach((poly) => {
                     triangles.push(...triangulate(poly));
                 });
-                
             }else if(openData.geojson.type === 'Polygon') {
-
                 let coordinates: number[][][] = openData.geojson.coordinates;
                 triangles = triangulate(coordinates);
-                 
             }
 
+            // Generate random points in a triangle
             triangles.forEach((tri) => {
                 let tester = new Triangle(tri);
-                rand_points.push(...tester.getRandomPoints());
+                let points = tester.getRandomPoints();
+
+                // Filter to only streetview usable maps
+                points.forEach(async (point) => {
+                    const request: google.maps.StreetViewLocationRequest = {
+                        location: {
+                            lat: point[0],
+                            lng: point[1]
+                        },
+                        preference: google.maps.StreetViewPreference.NEAREST,
+                        radius: 10
+                    }
+                    const getPanorama = promisify(streetViewService.getPanorama);
+                    const status = await getPanorama(request).then((status) => {
+                        console.log(status);
+                        return status;
+                    });
+                    if(status === google.maps.StreetViewStatus.OK) {
+                        rand_points.push(point);
+                    } else {
+                        console.log(status);
+                    }
+                });
+            
             });
-            console.log("Number of points calculated: ", rand_points.length);
+
+            return {openData, rand_points};
         }).catch((error: Error) => {
             console.log(error)
         });
 
+        if(processedMap) {
+            maps.push({
+                boundary: {
+                    location: [
+                        processedMap.openData.lat,
+                        processedMap.openData.lon
+                        ],
+                    radius: Math.max(
+                        Math.abs(Number(processedMap.openData.boundingbox[1])-
+                            Number(processedMap.openData.boundingbox[0])),
+                        Math.abs(Number(processedMap.openData.boundingbox[3])-
+                            Number(processedMap.openData.boundingbox[2])))
+                },
+                locations: processedMap.rand_points,
+                numRounds: startingData[i].numRounds,
+                roundTimer: startingData[i].roundTimer,
+                thumbnail: startingData[i].thumbnail,
+                title: processedMap.openData.display_name.split(',')[0],
+                plainTitle: processedMap.openData.display_name.split(',')[0].toLowerCase()
+            })
+        }
     }
 
+    const prompt = Prompt();
+
+    for(let i = 0; i < maps.length; i++) {
+        console.log("Title: " + maps[i].title);
+        console.log("Number of Points: " + maps[i].locations.length);
+        console.log("Num Rounds " + maps[i].numRounds);
+        console.log("Round Timer " + maps[i].roundTimer);
+
+        const publishPrompt = prompt("confirm an publish? (Y/n): ");
+
+        if(publishPrompt === "Y") {
+           await uploadMap(maps[i]);
+            console.log("Uploaded");
+        } else {
+            console.log("Skipped map");
+        }
+    }
 }
 
-// const loader = new Loader({
-//   apiKey: ENV.google_api_key,
-//   version: 'weekly',
-//   libraries: ['places']
-// })
-
-// loader.load().then(() => {
-//     let maps = getStartingData()
-//     maps?.forEach(map => console.log(map.city));
-// }).catch(err => {
-//     console.log(err);
-// })
-
-// let streetview: google.maps.StreetViewService;
-
-// function initStreetview (lat: number, lng: number, radius: number): void {
-//     streetview = new google.maps.StreetViewService();
-//     let latLng = new google.maps.LatLng(lat, lng);
-
-//     streetview.getPanoramaByLocation(latLng, radius, (streetViewPanoramaData: google.maps.StreetViewPanoramaData) => {
-//         if(streetViewPanoramaData) {
-//             console.log("success");
-//         }else {
-//             console.log("Error");
-//         }
-//     })
-// }
-
-// initStreetview(49.246495, -122.913943, 100);
-
-main();
+main().then(() => {
+    process.exit();
+});

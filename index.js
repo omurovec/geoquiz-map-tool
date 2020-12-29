@@ -58,10 +58,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+var js_api_loader_1 = require("@googlemaps/js-api-loader");
+var util_1 = require("util");
+var prompt_sync_1 = __importDefault(require("prompt-sync"));
 var https = __importStar(require("https"));
 var querystring = __importStar(require("querystring"));
 var poly2tri = __importStar(require("poly2tri"));
 var environment_1 = __importDefault(require("./environment"));
+var jsdom = __importStar(require("jsdom"));
+var firebase_1 = __importDefault(require("./firebase"));
 var POLYGON_THRESHOLD = 0.01;
 var POINT_DENSITY = 1000000;
 var Triangle = /** @class */ (function () {
@@ -105,7 +110,7 @@ function getStartingData() {
         return data;
     }
     catch (err) {
-        console.error('Invalid starting data');
+        console.error(err);
     }
     return null;
 }
@@ -156,7 +161,6 @@ function triangulate(coordinates) {
     for (var a = 1; a < coordinates[0].length; a++) {
         var x = coordinates[0][a][0];
         var y = coordinates[0][a][1];
-        console.log("New Point: {x: " + x + ", y: " + y + "}");
         polygon.push(new poly2tri.Point(x, y));
     }
     var swctx = new poly2tri.SweepContext(polygon);
@@ -167,7 +171,6 @@ function triangulate(coordinates) {
         for (var b = 1; b < coordinates[a].length; b++) {
             var x = coordinates[a][b][0];
             var y = coordinates[a][b][1];
-            console.log("New Point: {x: " + x + ", y: " + y + "}");
             hole.push(new poly2tri.Point(x, y));
         }
         swctx.addHole(hole);
@@ -183,62 +186,162 @@ function triangulate(coordinates) {
     });
     return triangles;
 }
-function main() {
+// Must return type any since the google types are loaded
+// within the function itself
+function initStreetViewService() {
     return __awaiter(this, void 0, void 0, function () {
-        var maps, i;
+        var window, loader;
         return __generator(this, function (_a) {
-            maps = getStartingData();
-            if (!maps)
-                return [2 /*return*/, null];
-            for (i = 0; i < maps.length; i++) {
-                getOpenStreetMapData(maps[i]).then(function (openData) {
-                    var rand_points = [];
-                    var triangles = [];
-                    if (openData.geojson.type === 'MultiPolygon') {
-                        var coordinates = openData.geojson.coordinates;
-                        coordinates.forEach(function (poly) {
-                            triangles.push.apply(triangles, triangulate(poly));
-                        });
-                    }
-                    else if (openData.geojson.type === 'Polygon') {
-                        var coordinates = openData.geojson.coordinates;
-                        triangles = triangulate(coordinates);
-                    }
-                    triangles.forEach(function (tri) {
-                        var tester = new Triangle(tri);
-                        rand_points.push.apply(rand_points, tester.getRandomPoints());
+            switch (_a.label) {
+                case 0:
+                    window = new jsdom.JSDOM("", { runScripts: "dangerously", resources: "usable" }).window;
+                    // @ts-ignore: Type does not matter
+                    global.window = window;
+                    global.document = window.document;
+                    loader = new js_api_loader_1.Loader({
+                        apiKey: environment_1.default.google_api_key,
+                        version: 'weekly',
+                        libraries: ['places']
                     });
-                    console.log("Number of points calculated: ", rand_points.length);
-                }).catch(function (error) {
-                    console.log(error);
-                });
+                    return [4 /*yield*/, loader.load().then(function () {
+                            console.log("google loaded");
+                        }).catch(function (err) {
+                            console.log(err);
+                        })];
+                case 1:
+                    _a.sent();
+                    global.google = global.window.google;
+                    return [2 /*return*/, new google.maps.StreetViewService()];
             }
-            return [2 /*return*/];
         });
     });
 }
-// const loader = new Loader({
-//   apiKey: ENV.google_api_key,
-//   version: 'weekly',
-//   libraries: ['places']
-// })
-// loader.load().then(() => {
-//     let maps = getStartingData()
-//     maps?.forEach(map => console.log(map.city));
-// }).catch(err => {
-//     console.log(err);
-// })
-// let streetview: google.maps.StreetViewService;
-// function initStreetview (lat: number, lng: number, radius: number): void {
-//     streetview = new google.maps.StreetViewService();
-//     let latLng = new google.maps.LatLng(lat, lng);
-//     streetview.getPanoramaByLocation(latLng, radius, (streetViewPanoramaData: google.maps.StreetViewPanoramaData) => {
-//         if(streetViewPanoramaData) {
-//             console.log("success");
-//         }else {
-//             console.log("Error");
-//         }
-//     })
-// }
-// initStreetview(49.246495, -122.913943, 100);
-main();
+function main() {
+    return __awaiter(this, void 0, void 0, function () {
+        var startingData, streetViewService, maps, i, processedMap, prompt, i, publishPrompt;
+        var _this = this;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    startingData = getStartingData();
+                    if (!startingData)
+                        return [2 /*return*/, null];
+                    return [4 /*yield*/, initStreetViewService()];
+                case 1:
+                    streetViewService = _a.sent();
+                    maps = [];
+                    i = 0;
+                    _a.label = 2;
+                case 2:
+                    if (!(i < startingData.length)) return [3 /*break*/, 5];
+                    return [4 /*yield*/, getOpenStreetMapData(startingData[i])
+                            .then(function (openData) {
+                            var rand_points = [];
+                            var triangles = [];
+                            // Triangulate the region
+                            if (openData.geojson.type === 'MultiPolygon') {
+                                var coordinates = openData.geojson.coordinates;
+                                coordinates.forEach(function (poly) {
+                                    triangles.push.apply(triangles, triangulate(poly));
+                                });
+                            }
+                            else if (openData.geojson.type === 'Polygon') {
+                                var coordinates = openData.geojson.coordinates;
+                                triangles = triangulate(coordinates);
+                            }
+                            // Generate random points in a triangle
+                            triangles.forEach(function (tri) {
+                                var tester = new Triangle(tri);
+                                var points = tester.getRandomPoints();
+                                // Filter to only streetview usable maps
+                                points.forEach(function (point) { return __awaiter(_this, void 0, void 0, function () {
+                                    var request, getPanorama, status;
+                                    return __generator(this, function (_a) {
+                                        switch (_a.label) {
+                                            case 0:
+                                                request = {
+                                                    location: {
+                                                        lat: point[0],
+                                                        lng: point[1]
+                                                    },
+                                                    preference: google.maps.StreetViewPreference.NEAREST,
+                                                    radius: 10
+                                                };
+                                                getPanorama = util_1.promisify(streetViewService.getPanorama);
+                                                return [4 /*yield*/, getPanorama(request).then(function (status) {
+                                                        console.log(status);
+                                                        return status;
+                                                    })];
+                                            case 1:
+                                                status = _a.sent();
+                                                if (status === google.maps.StreetViewStatus.OK) {
+                                                    rand_points.push(point);
+                                                }
+                                                else {
+                                                    console.log(status);
+                                                }
+                                                return [2 /*return*/];
+                                        }
+                                    });
+                                }); });
+                            });
+                            return { openData: openData, rand_points: rand_points };
+                        }).catch(function (error) {
+                            console.log(error);
+                        })];
+                case 3:
+                    processedMap = _a.sent();
+                    if (processedMap) {
+                        maps.push({
+                            boundary: {
+                                location: [
+                                    processedMap.openData.lat,
+                                    processedMap.openData.lon
+                                ],
+                                radius: Math.max(Math.abs(Number(processedMap.openData.boundingbox[1]) -
+                                    Number(processedMap.openData.boundingbox[0])), Math.abs(Number(processedMap.openData.boundingbox[3]) -
+                                    Number(processedMap.openData.boundingbox[2])))
+                            },
+                            locations: processedMap.rand_points,
+                            numRounds: startingData[i].numRounds,
+                            roundTimer: startingData[i].roundTimer,
+                            thumbnail: startingData[i].thumbnail,
+                            title: processedMap.openData.display_name.split(',')[0],
+                            plainTitle: processedMap.openData.display_name.split(',')[0].toLowerCase()
+                        });
+                    }
+                    _a.label = 4;
+                case 4:
+                    i++;
+                    return [3 /*break*/, 2];
+                case 5:
+                    prompt = prompt_sync_1.default();
+                    i = 0;
+                    _a.label = 6;
+                case 6:
+                    if (!(i < maps.length)) return [3 /*break*/, 10];
+                    console.log("Title: " + maps[i].title);
+                    console.log("Number of Points: " + maps[i].locations.length);
+                    console.log("Num Rounds " + maps[i].numRounds);
+                    console.log("Round Timer " + maps[i].roundTimer);
+                    publishPrompt = prompt("confirm an publish? (Y/n): ");
+                    if (!(publishPrompt === "Y")) return [3 /*break*/, 8];
+                    return [4 /*yield*/, firebase_1.default(maps[i])];
+                case 7:
+                    _a.sent();
+                    console.log("Uploaded");
+                    return [3 /*break*/, 9];
+                case 8:
+                    console.log("Skipped map");
+                    _a.label = 9;
+                case 9:
+                    i++;
+                    return [3 /*break*/, 6];
+                case 10: return [2 /*return*/];
+            }
+        });
+    });
+}
+main().then(function () {
+    process.exit();
+});
