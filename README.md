@@ -5,6 +5,7 @@ each map is input from the data.json file and processed using 3 main tools:
 * [Open Street Map](https://nominatim.openstreetmap.org/ui/search.html)
 * [Poli2Tri](https://github.com/r3mi/poly2tri.js)
 * [Google Maps Streetview API](https://developers.google.com/maps/documentation/javascript/reference/street-view-service?)
+
 After importing the maps from data.json, the script queries Open Street Map for a bounding polygon of the location. To generate random locations within this polygon, it first
 has to be triangulated using poly2tri. Once triangulated, random locations can be found using basic geometry and then it's on to the difficult part: Validating StreetView locations...
 
