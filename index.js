@@ -66,10 +66,10 @@ var Firebase_1 = __importDefault(require("./Firebase"));
 var StreetViewVerifier_1 = require("./StreetViewVerifier");
 var Triangulate_1 = require("./Triangulate");
 var POLYGON_THRESHOLD = 0.01;
-function getStartingData() {
+function getStartingData(dataFile) {
     var data;
     try {
-        data = require('./data.json');
+        data = require(dataFile);
         return data;
     }
     catch (err) {
@@ -124,7 +124,7 @@ function main() {
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    startingData = getStartingData();
+                    startingData = getStartingData('./data.json');
                     if (!startingData)
                         return [2 /*return*/, null];
                     maps = [];
@@ -133,6 +133,7 @@ function main() {
                 case 1:
                     if (!(i < startingData.length)) return [3 /*break*/, 4];
                     if (!startingData[i].city) return [3 /*break*/, 3];
+                    console.log("Processing " + startingData[i].city + "...");
                     return [4 /*yield*/, getOpenStreetMapData(startingData[i])
                             .then(function (openData) { return __awaiter(_this, void 0, void 0, function () {
                             var rand_points, triangles, coordinates, coordinates, _i, triangles_1, tri, tester, points, filtered_points;
@@ -224,7 +225,3 @@ function main() {
 main().then(function () {
     process.exit();
 });
-// import test_points from './points_test';
-// filterPoints(test_points).then((points) => {
-//     console.log(points.length);
-// });

@@ -41,10 +41,10 @@ interface OpenMap {
     }
 }
 
-function getStartingData (): MapInfo[] | null {
+function getStartingData (dataFile: string): MapInfo[] | null {
   let data: MapInfo[];
   try {
-    data = require('./data.json');
+    data = require(dataFile);
     return data;
   } catch (err) {
     console.error(err);
@@ -99,7 +99,7 @@ const getOpenStreetMapData = (map: MapInfo) =>
     });
 
 async function main() {
-    const startingData: MapInfo[] | null = getStartingData();
+    const startingData: MapInfo[] | null = getStartingData('./data.json');
     if(!startingData) return null;
 
     const maps: Map[] = [];
@@ -185,9 +185,3 @@ async function main() {
 main().then(() => {
     process.exit();
 });
-
-// import test_points from './points_test';
-
-// filterPoints(test_points).then((points) => {
-//     console.log(points.length);
-// });
