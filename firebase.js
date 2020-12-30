@@ -73,7 +73,7 @@ function uploadMap(map) {
             switch (_a.label) {
                 case 0: return [4 /*yield*/, gamesRef.doc(map.title).set({
                         boundary: {
-                            location: new admin.firestore.GeoPoint(map.boundary.location[0], map.boundary.location[1]),
+                            location: new admin.firestore.GeoPoint(Number(map.boundary.location[0]), Number(map.boundary.location[1])),
                             radius: map.boundary.radius
                         },
                         locations: map.locations.map(function (location) {

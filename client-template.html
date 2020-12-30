@@ -1,0 +1,49 @@
+<html>
+    <head>
+        <script
+            src="https://maps.googleapis.com/maps/api/js?key=GOOGLE_API_KEY&callback=filterPoints&libraries=&v=beta"
+            defer
+        ></script>
+    </head>
+    <body>
+        <form id="form" method="POST" action="/">
+            <input type="text" id="points" name="points">
+        </form>
+        <script>
+         async function filterPoints() {
+             const points = POINTS;
+             const filtered_points = [];
+
+             const streetViewService = new google.maps.StreetViewService();
+
+             for(let i = 0; i < points.length; i++) {
+                 const request = {
+                     location: {
+                         lat: points[i][1],
+                         lng: points[i][0]
+                     },
+                     preference: google.maps.StreetViewPreference.NEAREST,
+                     radius: 100
+                 };
+
+                 console.log(request);
+
+                 await streetViewService.getPanorama(request).then((res) => {
+                     // Push valid point
+                     filtered_points.push([
+                         res.data.location.latLng.lat(),
+                         res.data.location.latLng.lng()
+                     ]);
+                 }).catch((err) => {
+                     console.warn(err);
+                 });
+             }
+
+             console.log(filtered_points.length + " valid points");
+
+             document.getElementById("points").value = JSON.stringify(filtered_points);
+             document.getElementById("form").submit();
+         }
+        </script>
+    </body>
+</html>

@@ -27,8 +27,8 @@ const gamesRef = db.collection("games");
 export default async function uploadMap(map: Map) {
     await gamesRef.doc(map.title).set({
         boundary: {
-            location: new admin.firestore.GeoPoint(map.boundary.location[0],
-                                                  map.boundary.location[1]),
+            location: new admin.firestore.GeoPoint(Number(map.boundary.location[0]),
+                                                   Number(map.boundary.location[1])),
             radius: map.boundary.radius
         },
         locations: map.locations.map((location) =>

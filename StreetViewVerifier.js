@@ -1,23 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -58,38 +39,128 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initStreetViewService = void 0;
+exports.filterPoints = exports.runServer = void 0;
 var environment_1 = __importDefault(require("./environment"));
-var js_api_loader_1 = require("@googlemaps/js-api-loader");
-var jsdom = __importStar(require("jsdom"));
-// Must return type any since the google types are loaded
-// within the function itself
-function initStreetViewService() {
+var express_1 = __importDefault(require("express"));
+var puppeteer_1 = __importDefault(require("puppeteer"));
+var fs_1 = __importDefault(require("fs"));
+var body_parser_1 = __importDefault(require("body-parser"));
+// Run puppeteer instance to engage with server
+function runClient(url) {
     return __awaiter(this, void 0, void 0, function () {
-        var window, loader;
+        var browser, page, err_1;
         return __generator(this, function (_a) {
             switch (_a.label) {
-                case 0:
-                    window = new jsdom.JSDOM("", { runScripts: "dangerously", resources: "usable" }).window;
-                    // @ts-ignore: Type does not matter
-                    global.window = window;
-                    global.document = window.document;
-                    loader = new js_api_loader_1.Loader({
-                        apiKey: environment_1.default.google_api_key,
-                        version: 'weekly',
-                        libraries: ['places']
-                    });
-                    return [4 /*yield*/, loader.load().then(function () {
-                            console.log("google loaded");
-                        }).catch(function (err) {
-                            console.log(err);
-                        })];
+                case 0: return [4 /*yield*/, puppeteer_1.default.launch({ headless: true })];
                 case 1:
+                    browser = _a.sent();
+                    return [4 /*yield*/, browser.newPage()];
+                case 2:
+                    page = _a.sent();
+                    page.setDefaultNavigationTimeout(0);
+                    _a.label = 3;
+                case 3:
+                    _a.trys.push([3, 5, , 6]);
+                    return [4 /*yield*/, page.goto(url, { waitUntil: 'networkidle0' })];
+                case 4:
                     _a.sent();
-                    global.google = global.window.google;
-                    return [2 /*return*/, new google.maps.StreetViewService()];
+                    return [3 /*break*/, 6];
+                case 5:
+                    err_1 = _a.sent();
+                    console.error(err_1);
+                    throw new Error("Puppeteer could not connect to " + url);
+                case 6: return [4 /*yield*/, browser.close()];
+                case 7:
+                    _a.sent();
+                    return [2 /*return*/];
             }
         });
     });
 }
-exports.initStreetViewService = initStreetViewService;
+// Serve client the provided HTML 
+function runServer(html, callback) {
+    return __awaiter(this, void 0, void 0, function () {
+        var app, server;
+        var _this = this;
+        return __generator(this, function (_a) {
+            app = express_1.default();
+            app.use(body_parser_1.default.urlencoded({ extended: true }));
+            // Serve HTML
+            app.get('/', function (_, res) { return __awaiter(_this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    res.status(200).send(html);
+                    return [2 /*return*/];
+                });
+            }); });
+            // on POST close server and client
+            app.post('/', function (req, res) { return __awaiter(_this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    res.status(200).send("Filtering Complete!");
+                    server.close();
+                    callback(req.body);
+                    return [2 /*return*/];
+                });
+            }); });
+            server = app.listen(8080, function () { return __awaiter(_this, void 0, void 0, function () {
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            console.log("Server listening on port 8080...");
+                            // run client
+                            return [4 /*yield*/, runClient("http://localhost:8080")];
+                        case 1:
+                            // run client
+                            _a.sent();
+                            return [2 /*return*/];
+                    }
+                });
+            }); });
+            return [2 /*return*/];
+        });
+    });
+}
+exports.runServer = runServer;
+// Return the client-template.html with injected API Key and points data.
+// client-template.html includes the script to check points against the
+// StreetViewService google API
+function createHTML(points) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            return [2 /*return*/, new Promise(function (resolve, reject) {
+                    fs_1.default.readFile("./client-template.html", "utf-8", function (err, data) {
+                        if (err) {
+                            reject(new Error("Could not read template file"));
+                        }
+                        // Inject API key and points
+                        var html = data.replace("GOOGLE_API_KEY", environment_1.default.google_api_key).replace("POINTS", JSON.stringify(points));
+                        resolve(html);
+                    });
+                })];
+        });
+    });
+}
+function filterPoints(points) {
+    return __awaiter(this, void 0, void 0, function () {
+        var start, html;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    start = Date.now();
+                    return [4 /*yield*/, createHTML(points)];
+                case 1:
+                    html = _a.sent();
+                    return [2 /*return*/, new Promise(function (resolve, reject) {
+                            runServer(html, function (data, err) {
+                                if (err) {
+                                    reject(err);
+                                }
+                                var filtered_points = JSON.parse(data.points);
+                                console.log("Reduced " + points.length + " to " + filtered_points.length + " points in " + (Date.now() - start) + "ms");
+                                resolve(filtered_points);
+                            });
+                        })];
+            }
+        });
+    });
+}
+exports.filterPoints = filterPoints;

@@ -1,6 +1,6 @@
 import * as poly2tri from 'poly2tri';
 
-const POINT_DENSITY = 1000000;
+const POINT_DENSITY = 10000;
 
 export class Triangle {
     vertices: number[][];

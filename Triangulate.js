@@ -21,7 +21,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.triangulate = exports.Triangle = void 0;
 var poly2tri = __importStar(require("poly2tri"));
-var POINT_DENSITY = 1000000;
+var POINT_DENSITY = 10000;
 var Triangle = /** @class */ (function () {
     function Triangle(v) {
         this.vertices = v;
